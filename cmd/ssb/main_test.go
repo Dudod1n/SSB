@@ -105,21 +105,29 @@ func TestReportGroupsAndUnknownNames(t *testing.T) {
 		Names: map[string]string{"10.20.0.15": "client.example"}, ResolutionStatus: "complete",
 	}
 	txt := formatReport(r)
-	_, names, ok := strings.Cut(txt, "ИМЕНА ХОСТОВ ПО IP\n")
+	_, tables, ok := strings.Cut(txt, "\nВХОДЯЩИЕ\n")
 	if !ok {
-		t.Fatal("missing hostname section")
+		t.Fatal("missing incoming table")
 	}
-	incoming, outgoing, ok := strings.Cut(names, "Исходящие\n")
-	if !ok || strings.Count(incoming, "client.example") != 1 || strings.Count(outgoing, "client.example") != 1 ||
-		!strings.Contains(outgoing, "10.20.0.30") || !strings.Contains(outgoing, "-") {
-		t.Fatalf("incorrect hostname groups:\n%s", names)
+	incoming, outgoing, ok := strings.Cut(tables, "\nИСХОДЯЩИЕ\n")
+	if !ok || strings.Count(incoming, "client.example") != 2 || strings.Count(outgoing, "client.example") != 1 {
+		t.Fatalf("hostnames must accompany each observation:\n%s", tables)
+	}
+	found := false
+	for _, row := range strings.Split(outgoing, "\n") {
+		if strings.Join(strings.Fields(row), " ") == "10.20.0.20 10.20.0.30 5432 TCP 1 -" {
+			found = true
+		}
+	}
+	if !found || !strings.Contains(txt, "Всего обращений: 4 | входящих: 2 | исходящих: 2") {
+		t.Fatalf("missing unknown name or row totals:\n%s", txt)
 	}
 	if safeHostname(r.Hostname) != "app_blue" {
 		t.Fatal("unsafe report filename")
 	}
 	empty := formatReport(report{})
-	if strings.Count(empty, "За время наблюдения обращений не обнаружено.") != 4 {
-		t.Fatal("empty connection/hostname groups are missing")
+	if strings.Count(empty, "За время наблюдения обращений не обнаружено.") != 2 || !strings.Contains(empty, "Всего обращений: 0 | входящих: 0 | исходящих: 0") {
+		t.Fatal("empty observation groups or totals are missing")
 	}
 }
 

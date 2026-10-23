@@ -1,6 +1,6 @@
 # Разработка и публикация CLI
 
-Публичный продукт — Go CLI в `cmd/network-inspect/`: TXT-отчёт, исходные данные захвата и резолв имён. Внутренние отчёты, прототипы и прежний инструмент схем в публикуемый комплект не входят.
+Публичный продукт — Go CLI в `cmd/ssb/`: TXT-отчёт, исходные данные захвата и резолв имён. Внутренние отчёты, прототипы и прежний инструмент схем в публикуемый комплект не входят.
 
 ## Ветки и отдельная история
 
@@ -16,12 +16,12 @@
 2. Проверьте форматирование, тесты, анализ и сборку:
 
    ```bash
-   test -z "$(gofmt -l cmd/network-inspect)"
+   test -z "$(gofmt -l cmd/ssb)"
    go test ./...
    go vet ./...
    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath \
-     -o /tmp/network-inspect-check ./cmd/network-inspect
-   /tmp/network-inspect-check --help
+     -o /tmp/ssb-check ./cmd/ssb
+   /tmp/ssb-check --help
    python3 -m unittest discover -s tests -p test_publication.py
    ```
 

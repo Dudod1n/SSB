@@ -1,4 +1,4 @@
-// network-inspect collects TCP/IPv4 SYN attempts and writes a private TXT report.
+// ssb collects TCP/IPv4 SYN attempts and writes a private TXT report.
 package main
 
 import (
@@ -22,7 +22,7 @@ const captureFilter = "ip and tcp[tcpflags] & (tcp-syn|tcp-ack) == tcp-syn"
 
 func main() {
 	if len(os.Args) == 2 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
-		fmt.Println("Использование: network-inspect [секунды]\nПо умолчанию 60 секунд. Нужны tcpdump и права на захват пакетов.\nРезультат: TXT-отчёт и каталог raw/; JSON и схемы не создаются.")
+		fmt.Println("Использование: ssb [секунды]\nПо умолчанию 60 секунд. Нужны tcpdump и права на захват пакетов.\nРезультат: TXT-отчёт и каталог raw/; JSON и схемы не создаются.")
 		return
 	}
 	duration, err := parseDuration(os.Args[1:])
@@ -48,7 +48,7 @@ func parseDuration(args []string) (time.Duration, error) {
 			return time.Duration(seconds) * time.Second, nil
 		}
 	}
-	return 0, fmt.Errorf("использование: network-inspect [секунды]; длительность должна быть положительным целым числом")
+	return 0, fmt.Errorf("использование: ssb [секунды]; длительность должна быть положительным целым числом")
 }
 
 func collect(ctx context.Context, duration time.Duration, out io.Writer) (err error) {

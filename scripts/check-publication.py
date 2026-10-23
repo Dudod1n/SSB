@@ -24,7 +24,8 @@ SECRET_PATTERNS = {
 
 
 def allowed(path):
-    return path in PUBLIC_FILES or (path.startswith("cmd/network-inspect/")
+    # Keep the former path valid when checking published history.
+    return path in PUBLIC_FILES or (path.startswith(("cmd/ssb/", "cmd/network-inspect/"))
                                    and path.endswith(".go") and path.count("/") == 2)
 
 

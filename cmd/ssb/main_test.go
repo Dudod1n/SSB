@@ -61,8 +61,8 @@ func TestParseCapture(t *testing.T) {
 	links, count, err := parseCapture(strings.NewReader(input),
 		[]string{"10.20.0.20", "127.0.0.1", "172.17.0.1"}, []string{"10.20.0.20"}, &bad)
 	want := []link{
-		{"10.20.0.15", "10.20.0.20", 80, "incoming"},
-		{"10.20.0.20", "172.22.0.10", 443, "outgoing"},
+		{"10.20.0.15", "10.20.0.20", 80, "incoming", "TCP", 2},
+		{"10.20.0.20", "172.22.0.10", 443, "outgoing", "TCP", 1},
 	}
 	if err != nil || !reflect.DeepEqual(links, want) || count != 3 || !strings.Contains(bad.String(), "invalid packet") {
 		t.Fatalf("links = %#v; unparsed = %d; error = %v", links, count, err)
@@ -98,10 +98,10 @@ func TestResolveNamesKeepsValidPartialDNSAnswer(t *testing.T) {
 func TestReportGroupsAndUnknownNames(t *testing.T) {
 	r := report{
 		Hostname: "app/blue", Addresses: []string{"10.20.0.20"}, CIDRs: []string{"10.20.0.20/24"},
-		Links: []link{{"10.20.0.15", "10.20.0.20", 80, "incoming"},
-			{"10.20.0.15", "10.20.0.20", 443, "incoming"},
-			{"10.20.0.20", "10.20.0.15", 22, "outgoing"},
-			{"10.20.0.20", "10.20.0.30", 5432, "outgoing"}},
+		Links: []link{{"10.20.0.15", "10.20.0.20", 80, "incoming", "TCP", 1},
+			{"10.20.0.15", "10.20.0.20", 443, "incoming", "TCP", 1},
+			{"10.20.0.20", "10.20.0.15", 22, "outgoing", "TCP", 1},
+			{"10.20.0.20", "10.20.0.30", 5432, "outgoing", "TCP", 1}},
 		Names: map[string]string{"10.20.0.15": "client.example"}, ResolutionStatus: "complete",
 	}
 	txt := formatReport(r)
@@ -134,7 +134,7 @@ func TestCaptureFailureRetainsPrivateRawFiles(t *testing.T) {
 	if err == nil {
 		t.Fatal("capture failure was accepted")
 	}
-	for _, name := range []string{"syn.log", "capture.log"} {
+	for _, name := range []string{"packets.log", "capture.log"} {
 		info, err := os.Stat(filepath.Join(dir, name))
 		if err != nil || info.Mode().Perm() != 0600 {
 			t.Fatalf("raw file %s: %v, %v", name, info, err)

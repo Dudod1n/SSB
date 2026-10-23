@@ -15,7 +15,7 @@ func capture(ctx context.Context, duration time.Duration, rawDir string) (err er
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	packets, err := os.OpenFile(filepath.Join(rawDir, "syn.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	packets, err := os.OpenFile(filepath.Join(rawDir, "packets.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
@@ -25,7 +25,8 @@ func capture(ctx context.Context, duration time.Duration, rawDir string) (err er
 		return err
 	}
 	defer func() { err = errors.Join(err, diagnostic.Close()) }()
-	command := exec.Command("tcpdump", "-i", "any", "-nn", "-tttt", "-l", captureFilter)
+	// Quiet output keeps UDP application data (such as DNS queries) out of raw/.
+	command := exec.Command("tcpdump", "-i", "any", "-nn", "-tttt", "-q", "-l", captureFilter)
 	command.Env = append(os.Environ(), "LC_ALL=C")
 	command.Stdout, command.Stderr = packets, diagnostic
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

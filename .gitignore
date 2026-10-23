@@ -1,0 +1,8 @@
+/.local/
+/READY.md
+/dist/
+/tcp-report-*/
+/reports/
+__pycache__/
+*.py[cod]
+/network-inspect

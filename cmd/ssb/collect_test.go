@@ -61,6 +61,21 @@ func TestCollectionPipelineWithControlledTCPDump(t *testing.T) {
 	if !reflect.DeepEqual(stages, []string{phasePrepare, phaseCapture, phaseParse, phaseDNS, phaseSave}) || len(result.Report.Links) != 2 || result.Path == "" {
 		t.Fatal("stages, packet observations or final TXT missing")
 	}
+	if result.Report.Saved.IsZero() || result.Report.Saved.Before(result.Report.Finished) || result.Report.Saved.After(time.Now()) {
+		t.Fatal("report save time must be recorded after capture")
+	}
+	automatic, err := os.ReadFile(result.Path)
+	if err != nil || !bytes.Contains(automatic, []byte("Сохранён: "+result.Report.Saved.UTC().Format(time.RFC3339))) {
+		t.Fatalf("automatic report lost its save time: %v", err)
+	}
+	exported, err := exportReport(dir, tuiModel{data: result, phase: phaseReady, group: 3, query: "no-match.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	copy, err := os.ReadFile(exported)
+	if err != nil || !bytes.Equal(automatic, copy) {
+		t.Fatalf("filtered TUI export differs from automatic TXT: %v", err)
+	}
 	info, err := os.Stat(result.Directory)
 	if err != nil || info.Mode().Perm() != 0700 {
 		t.Fatalf("report directory permissions: %v", err)
@@ -101,5 +116,10 @@ func TestCollectionPipelineWithControlledTCPDump(t *testing.T) {
 	var output bytes.Buffer
 	if err := collect(context.Background(), time.Second, &output); err != nil || !strings.Contains(output.String(), "Отчёт сохранён:") || strings.ContainsRune(output.String(), '\x1b') {
 		t.Fatalf("plain collector output failed: %v", err)
+	}
+	_, path, ok := strings.Cut(output.String(), "\nОтчёт сохранён: ")
+	plain, err := os.ReadFile(strings.TrimSpace(path))
+	if !ok || err != nil || !bytes.Contains(output.Bytes(), plain) {
+		t.Fatalf("plain output differs from its saved TXT: %v", err)
 	}
 }

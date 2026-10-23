@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +11,7 @@ type report struct {
 	Hostname            string
 	Addresses, CIDRs    []string
 	Started, Finished   time.Time
+	Saved               time.Time
 	Duration            time.Duration
 	Links               []link
 	TCPBefore, TCPAfter tcpSnapshot
@@ -35,87 +35,67 @@ func counter(diagnostic, suffix string) string {
 
 func formatReport(r report) string {
 	var text strings.Builder
-	fmt.Fprintf(&text, "ОТЧЁТ TCP/UDP IPv4: %s — %s\n", r.Started.Format(time.RFC3339), r.Finished.Format(time.RFC3339))
-	fmt.Fprintf(&text, "ВМ: %s\nЗаданная длительность: %.0f секунд\n", r.Hostname, r.Duration.Seconds())
-	fmt.Fprintf(&text, "IPv4-адреса ВМ: %s\nIPv4-адреса ВМ с масками (CIDR): %s\n", strings.Join(r.Addresses, ","), strings.Join(r.CIDRs, ","))
-	for _, group := range []struct{ direction, title, first, second string }{
-		{"incoming", "ВХОДЯЩИЕ: внешний отправитель → ВМ", "REMOTE_IP", "VM_IP"},
-		{"outgoing", "ИСХОДЯЩИЕ: ВМ → внешний получатель", "VM_IP", "REMOTE_IP"},
-	} {
+	incoming, outgoing, packetWidth := 0, 0, 6
+	for _, connection := range r.Links {
+		switch connection.Direction {
+		case "incoming":
+			incoming++
+		case "outgoing":
+			outgoing++
+		}
+		packetWidth = max(packetWidth, len(strconv.FormatUint(connection.Packets, 10)))
+	}
+	saved := "неизвестно"
+	if !r.Saved.IsZero() {
+		saved = r.Saved.UTC().Format(time.RFC3339)
+	}
+	fmt.Fprintf(&text, "SSB v%s | ОТЧЁТ TCP/UDP IPv4\nСохранён: %s\n", version, saved)
+	fmt.Fprintf(&text, "Хост запуска: %s (%s)\n", clean(r.Hostname), clean(strings.Join(r.Addresses, ", ")))
+	fmt.Fprintf(&text, "Окно наблюдения: %g с\n", r.Finished.Sub(r.Started).Round(time.Millisecond).Seconds())
+	fmt.Fprintf(&text, "Период: %s — %s | задано: %.0f с\n", r.Started.Format(time.RFC3339), r.Finished.Format(time.RFC3339), r.Duration.Seconds())
+	fmt.Fprintf(&text, "IPv4/CIDR: %s\n", clean(strings.Join(r.CIDRs, ", ")))
+	fmt.Fprintf(&text, "Всего обращений: %d | входящих: %d | исходящих: %d\n", incoming+outgoing, incoming, outgoing)
+	for _, group := range []struct{ direction, title string }{{"incoming", "ВХОДЯЩИЕ"}, {"outgoing", "ИСХОДЯЩИЕ"}} {
 		fmt.Fprintf(&text, "\n%s\n", group.title)
-		var peers []string
-		ports := make(map[int]bool)
+		fmt.Fprintf(&text, "%-16s %-16s %5s %-8s %*s %s\n", "Отправитель", "Получатель", "Порт", "Протокол", packetWidth, "Пакеты", "Имя удалённого узла")
+		count := 0
 		for _, connection := range r.Links {
 			if connection.Direction != group.direction {
 				continue
 			}
-			if len(peers) == 0 {
-				fmt.Fprintf(&text, "%-18s %-18s %-8s %-5s %s\n", group.first, group.second, "DST_PORT", "PROTO", "ПАКЕТЫ")
-			}
-			fmt.Fprintf(&text, "%-18s %-18s %-8d %-5s %d\n", connection.Source, connection.Destination, connection.Port, connection.Protocol, connection.Packets)
 			peer := connection.Source
 			if group.direction == "outgoing" {
 				peer = connection.Destination
 			}
-			peers = append(peers, peer)
-			ports[connection.Port] = true
-		}
-		if len(peers) == 0 {
-			fmt.Fprintln(&text, "За время наблюдения обращений не обнаружено.")
-			continue
-		}
-		var numbers []int
-		for port := range ports {
-			numbers = append(numbers, port)
-		}
-		sort.Ints(numbers)
-		var labels []string
-		for _, port := range numbers {
-			labels = append(labels, strconv.Itoa(port))
-		}
-		fmt.Fprintf(&text, "Уникальные удалённые IP: %s\nУникальные порты назначения: %s\n", strings.Join(uniqueStrings(peers), ","), strings.Join(labels, ","))
-	}
-	writeSocketReport(&text, r.TCPBefore, r.TCPAfter, r.Names)
-	fmt.Fprintln(&text, "\nИМЕНА ХОСТОВ ПО IP")
-	for _, group := range []struct{ direction, title string }{{"incoming", "Входящие"}, {"outgoing", "Исходящие"}} {
-		fmt.Fprintf(&text, "\n%s\n", group.title)
-		var peers []string
-		for _, connection := range r.Links {
-			if connection.Direction == group.direction {
-				peer := connection.Source
-				if group.direction == "outgoing" {
-					peer = connection.Destination
-				}
-				peers = append(peers, peer)
-			}
-		}
-		if len(peers) == 0 {
-			fmt.Fprintln(&text, "За время наблюдения обращений не обнаружено.")
-			continue
-		}
-		fmt.Fprintf(&text, "%-18s %s\n", "IP", "HOSTNAME")
-		for _, ip := range uniqueStrings(peers) {
-			name := r.Names[ip]
+			name := clean(r.Names[peer])
 			if name == "" {
 				name = "-"
 			}
-			fmt.Fprintf(&text, "%-18s %s\n", ip, name)
+			fmt.Fprintf(&text, "%-16s %-16s %5d %-8s %*d %s\n", connection.Source, connection.Destination, connection.Port, connection.Protocol, packetWidth, connection.Packets, name)
+			count++
+		}
+		if count == 0 {
+			fmt.Fprintln(&text, "За время наблюдения обращений не обнаружено.")
 		}
 	}
+	writeSocketReport(&text, r.TCPBefore, r.TCPAfter, r.Names)
+	fmt.Fprintln(&text, "\nОбращения — строки таблиц захвата: протокол, IP отправителя/получателя и порт назначения. Порты отправителей остаются в raw/packets.log.")
+	fmt.Fprintln(&text, "Пакеты: TCP — SYN без ACK, UDP — наблюдаемые дейтаграммы. Повторы включены; счётчик не доказывает успешность TCP или доставку UDP.")
 	fmt.Fprintln(&text, "Источник имён: /etc/hosts и системные DNS-серверы через Go; «-» — имя не получено.")
 	if r.ResolutionStatus == "budget_exhausted" {
 		fmt.Fprintln(&text, "Бюджет поиска имён исчерпан: часть IP осталась без имени.")
 	}
-	fmt.Fprintln(&text, "\nСтрока захвата объединяет протокол, IP отправителя/получателя и порт назначения; порты отправителей остаются в raw/packets.log.")
-	fmt.Fprintln(&text, "ПАКЕТЫ: для TCP — SYN без ACK, для UDP — наблюдаемые дейтаграммы. Повторы включены в счётчик.")
-	fmt.Fprintln(&text, "Число пакетов не равно числу подключений: возможны повторы SYN и дубли при захвате. Счётчики не подтверждают успешность TCP или доставку UDP.")
 	fmt.Fprintln(&text, "Установленные TCP взяты из /proc/net/tcp и tcp6 (IPv4-mapped) в начале и конце захвата в текущем сетевом пространстве имён, включая соединения без трафика.")
 	fmt.Fprintln(&text, "Инициатор ранее открытого соединения неизвестен. Два снимка не доказывают непрерывность; соединения, жившие только между снимками, могли не попасть в таблицу.")
-	fmt.Fprintln(&text, "IPv6, локальные обращения и транзит не учитываются.")
-	fmt.Fprintln(&text, "Адреса ВМ 127.0.0.1 и 172.x.x.x и обращения через них исключены.")
+	fmt.Fprintln(&text, "IPv6, локальные обращения и транзит не учитываются. Адреса ВМ 127.0.0.1 и 172.x.x.x и обращения через них исключены.")
 	fmt.Fprintf(&text, "Адреса ВМ взяты на старте. Неразобранных строк захвата: %d\n", r.Unparsed)
 	fmt.Fprintf(&text, "Захвачено пакетов: %s; получено фильтром: %s; потеряно ядром: %s.\n", counter(r.Diagnostics, "captured"), counter(r.Diagnostics, "received by filter"), counter(r.Diagnostics, "dropped by kernel"))
-	fmt.Fprintf(&text, "\nДиагностика захвата (включая потери пакетов):\n%s", r.Diagnostics)
+	if r.Diagnostics != "" {
+		fmt.Fprintln(&text, "\nДиагностика захвата (включая потери пакетов):")
+		for _, diagnostic := range strings.Split(strings.TrimSuffix(r.Diagnostics, "\n"), "\n") {
+			fmt.Fprintln(&text, clean(diagnostic))
+		}
+	}
 	return text.String()
 }
 
@@ -131,7 +111,7 @@ func writeSocketReport(text *strings.Builder, before, after tcpSnapshot, names m
 		if snapshot.Taken.IsZero() {
 			fmt.Fprintf(text, "%s: снимок не выполнялся.\n", label)
 		} else if snapshot.Problem != "" {
-			fmt.Fprintf(text, "%s (%s): снимок неполный/недоступен — %s\n", label, snapshot.Taken.Format(time.RFC3339), snapshot.Problem)
+			fmt.Fprintf(text, "%s (%s): снимок неполный/недоступен — %s\n", label, snapshot.Taken.Format(time.RFC3339), clean(snapshot.Problem))
 		} else {
 			fmt.Fprintf(text, "%s (%s): снимок получен, соединений: %d.\n", label, snapshot.Taken.Format(time.RFC3339), len(snapshot.Sockets))
 		}
@@ -146,14 +126,14 @@ func writeSocketReport(text *strings.Builder, before, after tcpSnapshot, names m
 		fmt.Fprintln(text, "В доступных снимках установленных внешних соединений не найдено.")
 		return
 	}
-	fmt.Fprintf(text, "%-22s %-22s %-6s %-6s %s\n", "LOCAL", "REMOTE", "НАЧАЛО", "КОНЕЦ", "REMOTE_HOSTNAME")
+	fmt.Fprintf(text, "%-22s %-22s %-6s %-6s %s\n", "Локальный адрес", "Удалённый адрес", "Начало", "Конец", "Имя удалённого узла")
 	for _, socket := range sortedSockets(seen) {
-		name := names[socket.Remote.Addr().String()]
+		name := clean(names[socket.Remote.Addr().String()])
 		if name == "" {
 			name = "-"
 		}
 		marks := presence[socket]
 		fmt.Fprintf(text, "%-22s %-22s %-6s %-6s %s\n", socket.Local, socket.Remote, snapshotMark(marks[0], before), snapshotMark(marks[1], after), name)
 	}
-	fmt.Fprintln(text, "+ — есть в снимке; - — не найден; ? — снимок неполный/недоступен. LOCAL/REMOTE не определяют инициатора.")
+	fmt.Fprintln(text, "+ — есть в снимке; - — не найден; ? — снимок неполный/недоступен. Локальный/удалённый адреса не определяют инициатора.")
 }

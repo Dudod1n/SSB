@@ -164,6 +164,7 @@ func collectReport(ctx context.Context, duration time.Duration, notify func(coll
 	if err := publish(phaseSave); err != nil {
 		return result, err
 	}
+	r.Saved = time.Now()
 	name := filepath.Join(dir, "report_"+safeHostname(hostname)+".txt")
 	if err := os.WriteFile(name+".tmp", []byte(formatReport(*r)), 0600); err != nil {
 		return result, err

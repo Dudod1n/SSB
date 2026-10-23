@@ -17,6 +17,8 @@ type link struct {
 	Source, Destination string
 	Port                int
 	Direction           string
+	Protocol            string
+	Packets             uint64
 }
 
 func uniqueStrings(values []string) []string {
@@ -76,7 +78,7 @@ func parseCapture(input io.Reader, all, published []string, bad io.Writer) ([]li
 	for _, ip := range published {
 		allowed[ip] = true
 	}
-	seen := make(map[link]bool)
+	seen := make(map[link]uint64)
 	unparsed := 0
 	scanner := bufio.NewScanner(input)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -87,7 +89,7 @@ func parseCapture(input io.Reader, all, published []string, bad io.Writer) ([]li
 			continue
 		}
 		parsed := false
-		for i := 1; i+1 < len(fields); i++ {
+		for i := 1; i+2 < len(fields); i++ {
 			if fields[i] != ">" {
 				continue
 			}
@@ -96,13 +98,34 @@ func parseCapture(input io.Reader, all, published []string, bad io.Writer) ([]li
 			if !sourceOK || !destinationOK {
 				break
 			}
+			protocol := ""
+			switch fields[i+2] {
+			case "tcp":
+				// The capture filter admits only SYN without ACK in quiet output.
+				protocol = "TCP"
+			case "UDP,":
+				protocol = "UDP"
+			case "Flags":
+				if i+3 >= len(fields) {
+					break
+				}
+				flags := fields[i+3]
+				if strings.Contains(flags, "S") && !strings.Contains(flags, ".") {
+					protocol = "TCP"
+				} else {
+					parsed = true
+				}
+			}
+			if protocol == "" {
+				break
+			}
 			parsed = true
 			srcLocal := own[source] || strings.HasPrefix(source, "127.")
 			dstLocal := own[destination] || strings.HasPrefix(destination, "127.")
 			if !srcLocal && allowed[destination] {
-				seen[link{source, destination, port, "incoming"}] = true
+				seen[link{Source: source, Destination: destination, Port: port, Direction: "incoming", Protocol: protocol}]++
 			} else if allowed[source] && !dstLocal {
-				seen[link{source, destination, port, "outgoing"}] = true
+				seen[link{Source: source, Destination: destination, Port: port, Direction: "outgoing", Protocol: protocol}]++
 			}
 			break
 		}
@@ -114,7 +137,8 @@ func parseCapture(input io.Reader, all, published []string, bad io.Writer) ([]li
 		}
 	}
 	links := make([]link, 0, len(seen))
-	for connection := range seen {
+	for connection, count := range seen {
+		connection.Packets = count
 		links = append(links, connection)
 	}
 	sort.Slice(links, func(i, j int) bool {
@@ -128,7 +152,10 @@ func parseCapture(input io.Reader, all, published []string, bad io.Writer) ([]li
 		if a.Destination != b.Destination {
 			return a.Destination < b.Destination
 		}
-		return a.Port < b.Port
+		if a.Port != b.Port {
+			return a.Port < b.Port
+		}
+		return a.Protocol < b.Protocol
 	})
 	return links, unparsed, scanner.Err()
 }

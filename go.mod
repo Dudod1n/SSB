@@ -1,3 +1,3 @@
-module network-inspect
+module ssb
 
 go 1.22

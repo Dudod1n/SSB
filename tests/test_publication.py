@@ -38,6 +38,9 @@ class PublicationTest(unittest.TestCase):
     def test_allowed_source_and_locally_excluded_files_pass(self):
         self.write("cmd/network-inspect/main.go", "package main\n")
         self.git("add", "cmd/network-inspect/main.go")
+        self.git("commit", "-m", "Original CLI path")
+        (self.repo / "cmd/ssb").mkdir()
+        self.git("mv", "cmd/network-inspect/main.go", "cmd/ssb/main.go")
         self.write(".git/info/exclude", "/AGENTS.md\n/.local/\n/READY.md\n")
         self.write("AGENTS.md", "local instructions\n")
         self.write("READY.md", "local checks\n")

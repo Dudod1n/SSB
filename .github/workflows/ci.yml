@@ -45,12 +45,12 @@ jobs:
       - name: Test publication checks
         run: python3 -m unittest discover -s tests -p test_publication.py
       - name: Check formatting
-        run: test -z "$(gofmt -l cmd/network-inspect)"
+        run: test -z "$(gofmt -l cmd/ssb)"
       - name: Test
         run: go test ./...
       - name: Analyze
         run: go vet ./...
       - name: Build and check CLI
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -o /tmp/network-inspect-check ./cmd/network-inspect
-          /tmp/network-inspect-check --help
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -o /tmp/ssb-check ./cmd/ssb
+          /tmp/ssb-check --help

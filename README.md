@@ -8,16 +8,16 @@ Linux CLI для сбора TCP/IPv4-обращений и резолва IP в 
 
 ```bash
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath \
-  -o network-inspect ./cmd/network-inspect
-sudo ./network-inspect 120
+  -o ssb ./cmd/ssb
+sudo ./ssb 120
 ```
 
 На целевой ВМ нужны бинарник, `tcpdump` в `PATH` и права на захват пакетов. Go и интерпретаторы для запуска не нужны.
 
 ```bash
-sudo ./network-inspect        # сбор 60 секунд
-sudo ./network-inspect 120    # сбор 120 секунд
-./network-inspect --help
+sudo ./ssb        # сбор 60 секунд
+sudo ./ssb 120    # сбор 120 секунд
+./ssb --help
 ```
 
 Каждый запуск создаёт отдельный каталог `tcp-report-*` с правами `0700`. В нём сохраняются TXT-отчёт и `raw/` с выводом tcpdump, диагностикой, снимком адресов интерфейсов и неразобранными строками. Файлы имеют права `0600`. Отчёт также выводится в терминал. При ошибке захвата сохраняются исходные данные; Ctrl+C и SIGTERM останавливают запуск с ошибкой. JSON и схемы не создаются.

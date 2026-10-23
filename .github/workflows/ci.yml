@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check pull request destination
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE: ${{ github.base_ref }}
+          PR_HEAD: ${{ github.head_ref }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [ "$PR_BASE" = main ]; then
+            test "$PR_HEAD" = dev
+            test "$PR_HEAD_REPOSITORY" = "$GITHUB_REPOSITORY"
+          else
+            test "$PR_BASE" = dev
+          fi
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - name: Check publication contents and history
+        run: python3 scripts/check-publication.py
+      - name: Test publication checks
+        run: python3 -m unittest discover -s tests -p test_publication.py
+      - name: Check formatting
+        run: test -z "$(gofmt -l cmd/network-inspect)"
+      - name: Test
+        run: go test ./...
+      - name: Analyze
+        run: go vet ./...
+      - name: Build and check CLI
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -o /tmp/network-inspect-check ./cmd/network-inspect
+          /tmp/network-inspect-check --help
